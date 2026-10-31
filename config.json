@@ -1,0 +1,19 @@
+{
+  "master_file": "templates/Master File.xlsx",
+  "master_sheet": "Sheet1",
+  "header_rows": 10,
+  "last_column": 42,
+  "column_width_cm": 0.44,
+  "margins_cm": {
+    "left": 1.6,
+    "right": 0.6,
+    "top": 1.9,
+    "bottom": 1.9,
+    "header": 0.8,
+    "footer": 0.8
+  },
+  "body_font_size": 8,
+  "max_input_characters": 100000,
+  "max_output_tokens": 16000
+}
+
