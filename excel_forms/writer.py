@@ -5,6 +5,7 @@ import math
 from pathlib import Path
 import re
 import warnings
+import unicodedata
 
 from openpyxl import load_workbook
 from openpyxl.cell.cell import MergedCell
@@ -99,6 +100,16 @@ def write_workbook(source: Path, destination: Path, plan: dict, extraction: dict
                 cell.number_format = entries[0]["format"]
             if cell.data_type == "f":
                 cell.data_type = "s"
+        title_cell = config.get('title_cell')
+        if title_cell:
+            cell = ws[title_cell]
+            if isinstance(cell, MergedCell) or cell.row > header_rows or header[title_cell].value is not None:
+                raise ValueError('Configured title_cell must be a blank top-left cell in the Master Header')
+            if any(field['target'] == title_cell for field in plan['header_fields']):
+                raise ValueError('title_cell conflicts with a header field mapping')
+            cell.value = plan['title']
+            if cell.data_type == 'f':
+                cell.data_type = 's'
 
         font_size = config["body_font_size"]
         def box(row, start, end, text, bold=False, filled=False):
@@ -115,8 +126,10 @@ def write_workbook(source: Path, destination: Path, plan: dict, extraction: dict
             if cell.data_type == 'f':
                 cell.data_type = 's'  # source/form text is never executed as a formula
             pixels = (end-start+1)*config["column_width_cm"]*96/2.54
-            per_line = max(1, pixels/(font_size*0.7))
-            lines = sum(max(1, math.ceil(len(t)/per_line)) for t in str(text).split('\n'))
+            per_line = max(1, (pixels-6)/(font_size*0.82))
+            def display_length(text):
+                return sum(3 if c == '\u2026' else 2 if unicodedata.east_asian_width(c) in ('W', 'F') else 1 for c in text)
+            lines = sum(max(1, math.ceil(display_length(t)/per_line)) for t in str(text).split('\n'))
             ws.row_dimensions[row].height = max(ws.row_dimensions[row].height or 0, lines*(font_size+2)+3)
 
         r = header_rows+1

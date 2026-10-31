@@ -8,6 +8,7 @@ import time
 from .extract import extract, master_context
 from .planner import cache_key, create_plan, load_env, validate_plan
 from .writer import write_workbook
+from .chat_workflow import prepare, apply_request
 
 
 def save_json(path, data):
@@ -16,15 +17,18 @@ def save_json(path, data):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description='Engineering Excel forms: local extraction, AI mapping, deterministic generation.')
+    parser = argparse.ArgumentParser(description='Engineering Excel forms: prepare for Codex chat, then apply plans locally. No API key needed.')
     parser.add_argument('--config', default='config.json')
     sub = parser.add_subparsers(dest='command', required=True)
-    for name in ['inspect', 'plan', 'convert', 'batch']:
+    for name in ['inspect', 'prepare', 'apply', 'plan', 'convert', 'batch']:
         command = sub.add_parser(name)
         command.add_argument('path', type=Path, help='Source XLSX, or directory for batch')
         command.add_argument('--sheets', nargs='+', help='Optional exact source sheet names for extraction')
         command.add_argument('--output', type=Path, default=Path('output'))
         command.add_argument('--cache', type=Path, default=Path('cache'))
+        command.add_argument('--jobs', type=Path, default=Path('jobs'), help='Local Codex chat handoff folder')
+        if name in ('plan', 'convert', 'batch'):
+            command.add_argument('--api', action='store_true', help='Explicitly opt into the optional paid API mode')
         if name == 'convert':
             command.add_argument('--plan', type=Path, help='Use a saved plan envelope instead of calling AI')
         if name == 'batch':
@@ -39,7 +43,21 @@ def main(argv=None):
             raise ValueError('last_column must be between 21 and 100')
         if not 0 < config['header_rows'] <= 100 or config['body_font_size'] <= 0 or config['column_width_cm'] <= 0:
             raise ValueError('Header row count, font size and column width must be positive')
-        if args.command == 'batch':
+        if args.command == 'apply':
+            requests = [args.path] if args.path.is_file() else sorted(args.path.glob('*/request.json'))
+            if not requests:
+                raise ValueError('No requests found. Run prepare first.')
+            results = []
+            for request in requests:
+                try:
+                    results.append(apply_request(request, config, args.output))
+                except Exception as error:
+                    results.append({'request': str(request), 'status': 'failed', 'error': str(error)})
+            save_json(args.output/'apply-report.json', results)
+            for result in results:
+                print(json.dumps(result, ensure_ascii=True, indent=2))
+            return 1 if any(r['status'] == 'failed' for r in results) else 0
+        if args.command == 'batch' or (args.command == 'prepare' and args.path.is_dir()):
             if not args.path.is_dir():
                 raise ValueError('batch requires a directory')
             sources = sorted(p for p in args.path.glob('*.xlsx') if not p.name.startswith('~$')
@@ -54,6 +72,11 @@ def main(argv=None):
         def process(source):
             start = time.monotonic()
             try:
+                if args.command in ('prepare', 'plan', 'batch') and not getattr(args, 'api', False):
+                    return prepare(source, config, args.jobs, args.sheets)
+                if args.command == 'convert' and not args.plan and not args.api:
+                    raise ValueError('No API is needed: run prepare, ask Codex to write plans, then run apply jobs. '
+                                     'Alternatively use convert --plan FILE. Paid API mode requires --api.')
                 output = args.output / source.name
                 if args.command in ('convert', 'batch') and output.exists():
                     return {'source': str(source), 'status': 'skipped_existing_output'}
@@ -87,10 +110,10 @@ def main(argv=None):
                 save_json(args.output/'reports'/f'{source.stem}.error.json', result)
                 return result
 
-        if args.command == 'batch':
-            with ThreadPoolExecutor(max_workers=args.workers) as pool:
+        if args.command == 'batch' or (args.command == 'prepare' and args.path.is_dir()):
+            with ThreadPoolExecutor(max_workers=getattr(args, 'workers', 1)) as pool:
                 results = list(pool.map(process, sources))
-            save_json(args.output/'batch-report.json', results)
+            save_json((args.jobs if not getattr(args, 'api', False) else args.output)/'batch-report.json', results)
         else:
             results = [process(sources[0])]
         for result in results:

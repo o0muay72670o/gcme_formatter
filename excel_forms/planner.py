@@ -72,7 +72,24 @@ def cache_key(source: Path, config: dict) -> str:
     return digest.hexdigest()
 
 
+def _validate_structure(value, schema, path='plan'):
+    kind = schema['type']
+    if kind == 'object':
+        if not isinstance(value, dict) or set(value) != set(schema['properties']):
+            raise ValueError(f'{path}: expected exactly these fields: {list(schema["properties"])}')
+        for key, child in schema['properties'].items():
+            _validate_structure(value[key], child, f'{path}.{key}')
+    elif kind == 'array':
+        if not isinstance(value, list):
+            raise ValueError(f'{path}: expected an array')
+        for i, item in enumerate(value):
+            _validate_structure(item, schema['items'], f'{path}[{i}]')
+    elif kind == 'string' and not isinstance(value, str):
+        raise ValueError(f'{path}: expected text')
+
+
 def validate_plan(plan: dict, extraction: dict, context: dict) -> dict:
+    _validate_structure(plan, SCHEMA)
     known = {c["id"] for s in extraction["sheets"] for c in s["cells"]}
     used, excluded = set(), set()
     targets = set()

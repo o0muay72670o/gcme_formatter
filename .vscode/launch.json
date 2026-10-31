@@ -11,13 +11,21 @@
       "console": "integratedTerminal"
     },
     {
-      "name": "Convert folder with AI",
+      "name": "1. Prepare folder for Codex chat (no API)",
       "type": "debugpy",
       "request": "launch",
       "program": "${workspaceFolder}/main.py",
-      "args": ["batch", "input"],
+      "args": ["prepare", "input"],
       "cwd": "${workspaceFolder}",
-      "envFile": "${workspaceFolder}/.env",
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "2. Apply Codex chat plans (no API)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/main.py",
+      "args": ["apply", "jobs"],
+      "cwd": "${workspaceFolder}",
       "console": "integratedTerminal"
     }
   ]

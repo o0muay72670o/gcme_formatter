@@ -1,144 +1,142 @@
 # Engineering Excel Form Converter
 
-A Python project for VS Code. Each Excel file can have a different layout. Python
-extracts cell content and merged ranges, AI proposes a structured mapping, and
-Python builds the new form using your Master Header.
+Use **Codex in this chat to understand each form**, then Python to create the Excel
+output. Different files can have different layouts. **No API key is needed.**
 
-## Start in VS Code
+Python does not connect itself to your Codex conversation. It prepares local JSON
+requests; Codex reads them in this workspace and writes plans; Python applies the
+plans. This is assisted batch processing through a chat you start or continue.
 
-The local `.venv` is already configured on this computer. Open the project folder,
-select `.venv\Scripts\python.exe` using **Python: Select Interpreter**, then open
-**Terminal → New Terminal**.
+## Use it in VS Code
+
+The Python environment is already configured on this computer. Select
+`.venv\Scripts\python.exe` with **Python: Select Interpreter**.
+
+1. Put source `.xlsx` files in `input/`.
+2. Put the Master in `templates/Master File.xlsx`.
+3. Open **Terminal → New Terminal** and run:
+
+```powershell
+.\.venv\Scripts\python.exe main.py prepare input
+```
+
+4. In **this Codex chat with the project workspace**, say:
+
+> Process the prepared requests in jobs using the Master Header. Create the plans
+> and apply them. Use this chat for the AI analysis; do not use an API.
+
+Codex can do the preparation too. You can simply say:
+
+> Process the Excel files in input using this project's no-API workflow.
+
+5. Find the new workbooks in `output/`, with per-file reports in `output/reports/`.
+   Review engineering wording, exclusions, sign-off fields and Excel Print Preview.
+
+To run the application step yourself after Codex has created the plans:
+
+```powershell
+.\.venv\Scripts\python.exe main.py apply jobs
+```
+
+F5 also offers **1. Prepare folder for Codex chat (no API)** and
+**2. Apply Codex chat plans (no API)**. Preparation alone does not generate plans;
+ask Codex in between those two steps. There is no `.env` setup in this workflow.
+
+## Sample file
+
+The sample and Master are already copied into the local input/template folders.
+They are excluded from Git; after cloning, copy your own workbooks there.
+
+The sample includes original pages, helper tables, duplicate exports and a blank
+active sheet. Select the two complete table representations for analysis:
+
+```powershell
+.\.venv\Scripts\python.exe main.py prepare "input/ECM-05-008 AT 4 Ceiling Closure Check Sheet.xlsx" --sheets "Table 1" "Table 2"
+```
+
+For an inventory without creating a chat request:
 
 ```powershell
 .\.venv\Scripts\python.exe main.py inspect "input/ECM-05-008 AT 4 Ceiling Closure Check Sheet.xlsx"
 ```
 
-This command is local and makes **no AI request**. It writes the extracted content
-to `output/reports/`. The supplied sample and Master have been copied into `input/`
-and `templates/`; your Downloads originals are unchanged.
-These workbooks are local only and excluded from Git. After cloning the repository,
-copy your source `.xlsx` files into `input/` and your Master into `templates/`.
+Without `--sheets`, prepare extracts all nonempty source sheets. Codex must account
+for duplicates explicitly; the program does not silently drop their content.
 
-You can also press F5 and select **Inspect sample (no AI cost)**. VS Code will
-recommend Microsoft's Python and debugger extensions if they are missing.
+## How the handoff works
 
-## Enable AI mapping
+- `prepare FILE_OR_FOLDER` writes `jobs/<name>-<hash>/request.json`: source cell
+  IDs, text, locations, merges, Master labels, allowed header targets and plan schema.
+- Codex writes a `plan.json` envelope beside each request. It contains the exact
+  source_hash and a completed plan object. AGENTS.md guides future project chats.
+- `apply jobs` validates each plan, rechecks the source/Master/settings fingerprint,
+  and builds the output. You can also apply one request.json path.
+- Files without plans report waiting_for_chat. Invalid plans fail without stopping
+  other requests. Existing outputs are skipped. Use `--output output/run2` for a
+  fresh output folder.
 
-1. Copy `.env.example` to `.env`.
-2. Fill in `OPENAI_API_KEY` and `OPENAI_MODEL` locally. Choose a model available to
-   your API account that supports Responses API Structured Outputs. No model is
-   silently selected. Do not put the key in source code or send it through chat.
-3. Run a plan first:
+Re-running prepare does not overwrite an existing plan. Unchanged jobs can reuse
+their saved plans without another AI analysis. A changed workbook, Master, selected
+sheets or configuration gets a new fingerprint. Old requests for changed files are
+rejected. Keep only requests you want to process in jobs, or apply specific paths.
 
-```powershell
-python main.py plan "input/ECM-05-008 AT 4 Ceiling Closure Check Sheet.xlsx" --sheets "ECM-05-008 AT4_P1" "ECM-05-008 AT4_P2"
-```
+`batch input` and `plan FILE` also default to preparing chat requests.
+`convert FILE --plan ENVELOPE.json` accepts a saved envelope. None of these makes an
+API call by default. Optional API mode requires explicitly adding `--api` plus an
+API key/model; it is not required for the chat workflow.
 
-`--sheets` is optional. It is useful for this sample because its workbook contains
-multiple duplicate representations and a blank active sheet. Without it, all
-nonempty worksheets are sent for mapping. Inspect first to see their names.
+## Excel behavior
 
-The plan command sends the extracted text and layout metadata plus the Master
-Header context to `https://api.openai.com/v1/responses`. It does not upload the
-whole workbook or send images. This is a billable API call. There is no separate
-AI call for each formatting operation. Keys come from environment variables or
-your local `.env` file.
+config.json contains your prompt's settings:
 
-Review the saved `*.plan.json` and `*.report.json`, then generate:
+- Master Header rows 1–10 through AP, with the form title in blank cell P4.
+- 0.44 cm target grid width, A4 portrait, left margin 1.6 cm, right 0.6 cm,
+  top/bottom 1.9 cm, header/footer 0.8 cm.
+- Active source sheet renamed to Old (or a collision-safe suffix).
+- New sheet named from the filename, truncated to Excel's 31-character limit.
+- Variable body tables for unmatched fields, inspection items, remarks and signatures.
+- Print area and Fit to one page wide by one page tall.
 
-```powershell
-python main.py convert "input/ECM-05-008 AT 4 Ceiling Closure Check Sheet.xlsx" --sheets "ECM-05-008 AT4_P1" "ECM-05-008 AT4_P2"
-```
+Master labels are preserved. Actual header values come from referenced source
+cells. plan.title supplies the normalized form title. Original inputs are never
+overwritten. The output copy retains the other source sheets.
 
-The identical request reuses its cached plan. To use an edited plan, add
-`--plan "output/reports/ECM-05-008 AT 4 Ceiling Closure Check Sheet.plan.json"`.
-Keep the source, settings and `--sheets` selection the same. Edited plans are
-validated before generation.
+## Review and current limits
 
-## Run a folder
+Every extracted nonempty cell must be represented or excluded with a reason.
+Unknown IDs, missing coverage, malformed tables and attempts to overwrite Master
+labels are rejected. These checks do not prove semantic correctness: review the
+engineering wording, units, exclusions, response fields and sign-off sections.
 
-```powershell
-python main.py batch input
-# Optional: process two independent files concurrently.
-python main.py batch input --workers 2
-```
+One-page settings do not prove actual printed page count or legibility. Reports
+estimate shrinkage; native Excel print verification is not automated. Review Print
+Preview. Large forms may need human layout decisions. Physical column widths also
+depend on the workbook's Normal font and Excel rounding.
 
-Put `.xlsx` source files in `input/`. The Master lives separately in `templates/`.
-Outputs and reports go to `output/`. Existing output files are skipped; use
-`--output output/run2` for a fresh run. Files that fail do not stop the rest of
-the batch. A batch with failures returns a nonzero exit code.
+Image-only text, handwritten marks, charts, drawings and complex controls are not
+interpreted by the extractor. Images/charts trigger review notes. Floating Master
+logos are not copied. openpyxl may lose unsupported shapes or controls in output
+copies; keep originals. .xls, .xlsm, protected files and Master Header formulas are
+not supported. Active sheets with dependent formulas/named ranges are blocked from
+automatic renaming. Body formulas are literal text, not executed or recalculated.
 
-Cached AI plans use a hash of the source bytes, Master bytes, selected sheets,
-configuration, prompt version and model. The cache is for the **same input**;
-it does not guess that two different files have the same layout. Delete a cache
-entry deliberately if you want another billable analysis of that same input.
+This workflow uses the usage limits of your Codex chat. It does not consume API
+credits or independently run unattended AI sessions. Processing many unrelated
+layouts still takes AI analysis; Python handles repeated Excel formatting.
 
-## What follows your prompt
-
-- Renames the active source worksheet to `Old` (or a collision-safe suffix).
-- Adds a new sheet based on the filename. Excel's 31-character limit requires
-  truncation, and duplicate names receive a suffix.
-- Copies the Master Header's cells, merged ranges, formatting and row heights.
-- Applies the 0.44 cm grid and A4 portrait with the specified margins: left 1.6,
-  right 0.6, top/bottom 1.9, header/footer 0.8 cm.
-- Builds variable body tables from the AI plan, including fields absent from the
-  Header. Tables can have different columns for checks, data and signatures.
-- Sets a print area and Fit to 1 page wide by 1 page tall.
-
-`config.json` holds the settings. Header rows are 1–10 and the grid ends at AP for
-your supplied Master. Change these if a different Master is used. Physical Excel
-column widths depend on the workbook's Normal font and display rounding; 0.44 cm
-is a target, not a guarantee for every workbook font.
-
-## Checks and current limits
-
-This is a working first version, **not a validated converter for every engineering
-form**. The local extraction, validation, caching and workbook generation are
-tested. Live AI mapping requires your API configuration and has not been run here.
-
-Every nonempty extracted source cell must be represented or explicitly excluded
-with a reason. Invalid IDs and attempts to overwrite Master labels are rejected.
-This detects unaccounted cells, but it does not prove that AI preserved their
-meaning. Review exclusions, wording, units, blank response boxes and sign-off
-fields before using a generated engineering form.
-
-One-page settings do not prove readability or actual printed page count. The
-report includes an estimated scale and flags a small estimated font. Native Excel
-print verification is not automated in this version; check Print Preview before
-accepting a form. A large source form may need human layout decisions.
-
-Image-only text, embedded drawings, charts, handwritten marks and complex Excel
-controls are not interpreted. Add a vision/OCR stage later if the actual file set
-needs it. Images/charts detected in the source trigger review notes. `openpyxl`
-can lose unsupported shapes or controls in an output copy. Keep original inputs;
-the program never overwrites them. `.xls`, `.xlsm`, password-protected files and
-dependent formulas requiring an automatic sheet-rename repair are not supported.
-Master Header formulas are rejected rather than copied with uncertain references.
-Master branding uses copied cells; floating logos are not copied automatically.
-Original formulas remain on source sheets; body formulas are preserved as literal
-text, not recalculated or executed.
-
-There are no automatic API retries after timeouts, to avoid silently repeating
-possibly billable requests. Reports record usage returned by the API; cached
-requests record a cache hit. Concurrency reduces waiting time, not token usage.
-
-## Tests
+## Tests and installation
 
 ```powershell
-python -m unittest discover -s tests -v
+.\.venv\Scripts\python.exe -m unittest discover -s tests -v
 ```
 
-On another computer install Python 3.11 or newer, then:
+On another computer, install Python 3.11+ and create the environment:
 
 ```powershell
 py -3 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
-This computer's environment uses the existing bundled Python with system packages
-because no standalone Python was installed. It can be recreated with a standard
-Python installation later. No global packages or editor extensions were installed.
-
-API implementation reference:
-[OpenAI Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs).
+This computer's local environment uses the available bundled Python runtime.
+The environment, workbooks, jobs, reports and secrets are excluded from Git.
+No paid API calls are needed to install, test or use the chat workflow.

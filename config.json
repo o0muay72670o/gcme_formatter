@@ -2,6 +2,7 @@
   "master_file": "templates/Master File.xlsx",
   "master_sheet": "Sheet1",
   "header_rows": 10,
+  "title_cell": "P4",
   "last_column": 42,
   "column_width_cm": 0.44,
   "margins_cm": {
