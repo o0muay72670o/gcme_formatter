@@ -1,142 +1,219 @@
-# Engineering Excel Form Converter
+# GCME Formatter
 
-Use **Codex in this chat to understand each form**, then Python to create the Excel
-output. Different files can have different layouts. **No API key is needed.**
+**A Python and Codex workflow for standardizing engineering Excel forms with different layouts.**
 
-Python does not connect itself to your Codex conversation. It prepares local JSON
-requests; Codex reads them in this workspace and writes plans; Python applies the
-plans. This is assisted batch processing through a chat you start or continue.
+The project combines AI-assisted form interpretation with repeatable Python workbook
+generation. Codex identifies fields and table structures; Python validates the mapping,
+copies a shared Master Header, and builds the output workbook.
 
-## Use it in VS Code
+The default workflow uses Codex chat as the planner. **No separate AI API key is required.**
+Python does not connect to a Codex conversation automatically: a person starts the
+chat handoff and reviews the generated forms.
 
-The Python environment is already configured on this computer. Select
-`.venv\Scripts\python.exe` with **Python: Select Interpreter**.
+## The problem
 
-1. Put source `.xlsx` files in `input/`.
-2. Put the Master in `templates/Master File.xlsx`.
-3. Open **Terminal → New Terminal** and run:
+Engineering inspection forms often contain the same kinds of information in different
+places: instrument identifiers, inspection items, calibration readings, remarks, and
+signatures. Merged cells, wide tables, duplicate helper sheets, and inconsistent naming
+make a single fixed cell-to-cell conversion script insufficient.
+
+This project separates the work into two parts:
+
+| Responsibility | Handled by |
+| --- | --- |
+| Interpret unfamiliar layouts and distinguish duplicate representations | Codex chat |
+| Decide which source fields belong in the Master Header or Body | Codex chat, with human review |
+| Extract cells and layout metadata, validate references, and generate workbooks | Python |
+| Confirm engineering meaning, writing space, and printed layout | Human review in Excel |
+
+## Workflow
+
+```mermaid
+flowchart TD
+    A[Source XLSX files and Master template] --> B[Python: extract content and layout]
+    B --> C[request.json]
+    C --> D[Codex chat: interpret and map the form]
+    D --> E[plan.json with source cell references]
+    E --> F[Python: validate and generate]
+    F --> G[Formatted XLSX files and review reports]
+    G --> H[Engineering and Excel print review]
+```
+
+The handoff uses local files. Workbook text is treated as data, rather than instructions
+to the agent. The mapping plan describes the output; it does not contain executable code.
+
+## Features
+
+- **Variable form layouts:** each workbook can have its own mapping and Body sections.
+- **Shared formatting:** copies Master Header cells, merged ranges, styles, and row heights.
+- **Traceable mappings:** plans reference source cell IDs instead of relying on generated prose alone.
+- **Source coverage checks:** every extracted nonempty cell must be represented or explicitly excluded with a reason.
+- **Header protection:** rejects mappings that overwrite populated Master labels.
+- **Change detection:** source, Master, selected sheets, and settings are fingerprinted; stale plans are rejected.
+- **Reusable plans:** unchanged requests can use saved plans without another AI interpretation.
+- **Batch handling:** per-file reports, isolated failures, and protection against overwriting existing outputs.
+- **Print setup:** A4, configurable margins, a defined print area, and fit-to-one-page settings.
+
+Coverage validation helps detect missing references. It does **not** prove that a mapping
+preserves engineering meaning or that an exclusion is appropriate.
+
+## Quick start
+
+### 1. Install
+
+Requirements: Python 3.11+, Git, and access to Codex with the cloned project as its
+workspace. VS Code is optional. The commands below use Windows PowerShell.
+
+```powershell
+git clone https://github.com/o0muay72670o/gcme_formatter.git
+cd gcme_formatter
+py -3 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+```
+
+In VS Code, choose `.venv\Scripts\python.exe` through **Python: Select Interpreter**.
+
+### 2. Add your files
+
+```text
+input/
+    inspection-form.xlsx
+templates/
+    Master File.xlsx
+```
+
+Source workbooks and the Master template are **not included in the repository**.
+Supply your own files, then adjust [config.json](config.json) to match the Master.
+The default configuration expects a sheet named `Sheet1`, Header rows 1–10 through
+column AP, and a blank title cell at P4.
+
+### 3. Prepare requests
 
 ```powershell
 .\.venv\Scripts\python.exe main.py prepare input
 ```
 
-4. In **this Codex chat with the project workspace**, say:
+This extracts local workbook data into `jobs/<name>-<hash>/request.json`.
+It makes no AI or network request. Folder preparation reads `.xlsx` files directly
+inside the specified folder; it does not recursively process subfolders.
 
-> Process the prepared requests in jobs using the Master Header. Create the plans
-> and apply them. Use this chat for the AI analysis; do not use an API.
+### 4. Ask Codex to create the plans
 
-Codex can do the preparation too. You can simply say:
+Open a Codex chat attached to this project and use a prompt such as:
 
-> Process the Excel files in input using this project's no-API workflow.
+> Process the prepared requests in jobs using the Master Header. Read AGENTS.md,
+> create a plan.json beside each request, validate the source references, and apply
+> the plans. Use this chat for analysis; do not use an API. Preserve engineering
+> wording and blank entry fields, and flag uncertain mappings for review.
 
-5. Find the new workbooks in `output/`, with per-file reports in `output/reports/`.
-   Review engineering wording, exclusions, sign-off fields and Excel Print Preview.
+Codex can also run preparation when asked to process the files in `input/`.
+[AGENTS.md](AGENTS.md) documents the project workflow for the agent.
 
-To run the application step yourself after Codex has created the plans:
+### 5. Apply and review
+
+If Codex has written the plans but has not applied them:
 
 ```powershell
 .\.venv\Scripts\python.exe main.py apply jobs
 ```
 
-F5 also offers **1. Prepare folder for Codex chat (no API)** and
-**2. Apply Codex chat plans (no API)**. Preparation alone does not generate plans;
-ask Codex in between those two steps. There is no `.env` setup in this workflow.
+Workbooks appear in `output/`, with individual reports in `output/reports/`.
+Open them in Excel and check field meaning, exclusions, response boxes, signatures,
+and Print Preview before accepting the forms.
 
-## Sample file
+The included VS Code launch configurations also offer **Prepare folder for Codex
+chat** and **Apply Codex chat plans**. Ask Codex to create the plans between those steps.
 
-The sample and Master are already copied into the local input/template folders.
-They are excluded from Git; after cloning, copy your own workbooks there.
-
-The sample includes original pages, helper tables, duplicate exports and a blank
-active sheet. Select the two complete table representations for analysis:
+## Useful commands
 
 ```powershell
-.\.venv\Scripts\python.exe main.py prepare "input/ECM-05-008 AT 4 Ceiling Closure Check Sheet.xlsx" --sheets "Table 1" "Table 2"
-```
+# Inspect a workbook locally.
+.\.venv\Scripts\python.exe main.py inspect "input/inspection-form.xlsx"
 
-For an inventory without creating a chat request:
+# Select actual form sheets when the workbook also contains helper sheets.
+.\.venv\Scripts\python.exe main.py prepare "input/inspection-form.xlsx" --sheets "Page 1" "Page 2"
 
-```powershell
-.\.venv\Scripts\python.exe main.py inspect "input/ECM-05-008 AT 4 Ceiling Closure Check Sheet.xlsx"
-```
+# Apply a single prepared request.
+.\.venv\Scripts\python.exe main.py apply "jobs/your-job/request.json"
 
-Without `--sheets`, prepare extracts all nonempty source sheets. Codex must account
-for duplicates explicitly; the program does not silently drop their content.
+# Write a new run without replacing existing output files.
+.\.venv\Scripts\python.exe main.py apply jobs --output output/run2
 
-## How the handoff works
-
-- `prepare FILE_OR_FOLDER` writes `jobs/<name>-<hash>/request.json`: source cell
-  IDs, text, locations, merges, Master labels, allowed header targets and plan schema.
-- Codex writes a `plan.json` envelope beside each request. It contains the exact
-  source_hash and a completed plan object. AGENTS.md guides future project chats.
-- `apply jobs` validates each plan, rechecks the source/Master/settings fingerprint,
-  and builds the output. You can also apply one request.json path.
-- Files without plans report waiting_for_chat. Invalid plans fail without stopping
-  other requests. Existing outputs are skipped. Use `--output output/run2` for a
-  fresh output folder.
-
-Re-running prepare does not overwrite an existing plan. Unchanged jobs can reuse
-their saved plans without another AI analysis. A changed workbook, Master, selected
-sheets or configuration gets a new fingerprint. Old requests for changed files are
-rejected. Keep only requests you want to process in jobs, or apply specific paths.
-
-`batch input` and `plan FILE` also default to preparing chat requests.
-`convert FILE --plan ENVELOPE.json` accepts a saved envelope. None of these makes an
-API call by default. Optional API mode requires explicitly adding `--api` plus an
-API key/model; it is not required for the chat workflow.
-
-## Excel behavior
-
-config.json contains your prompt's settings:
-
-- Master Header rows 1–10 through AP, with the form title in blank cell P4.
-- 0.44 cm target grid width, A4 portrait, left margin 1.6 cm, right 0.6 cm,
-  top/bottom 1.9 cm, header/footer 0.8 cm.
-- Active source sheet renamed to Old (or a collision-safe suffix).
-- New sheet named from the filename, truncated to Excel's 31-character limit.
-- Variable body tables for unmatched fields, inspection items, remarks and signatures.
-- Print area and Fit to one page wide by one page tall.
-
-Master labels are preserved. Actual header values come from referenced source
-cells. plan.title supplies the normalized form title. Original inputs are never
-overwritten. The output copy retains the other source sheets.
-
-## Review and current limits
-
-Every extracted nonempty cell must be represented or excluded with a reason.
-Unknown IDs, missing coverage, malformed tables and attempts to overwrite Master
-labels are rejected. These checks do not prove semantic correctness: review the
-engineering wording, units, exclusions, response fields and sign-off sections.
-
-One-page settings do not prove actual printed page count or legibility. Reports
-estimate shrinkage; native Excel print verification is not automated. Review Print
-Preview. Large forms may need human layout decisions. Physical column widths also
-depend on the workbook's Normal font and Excel rounding.
-
-Image-only text, handwritten marks, charts, drawings and complex controls are not
-interpreted by the extractor. Images/charts trigger review notes. Floating Master
-logos are not copied. openpyxl may lose unsupported shapes or controls in output
-copies; keep originals. .xls, .xlsm, protected files and Master Header formulas are
-not supported. Active sheets with dependent formulas/named ranges are blocked from
-automatic renaming. Body formulas are literal text, not executed or recalculated.
-
-This workflow uses the usage limits of your Codex chat. It does not consume API
-credits or independently run unattended AI sessions. Processing many unrelated
-layouts still takes AI analysis; Python handles repeated Excel formatting.
-
-## Tests and installation
-
-```powershell
+# Run tests using generated workbook fixtures.
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 ```
 
-On another computer, install Python 3.11+ and create the environment:
+Missing plans report `waiting_for_chat`. Invalid plans fail with a reason. Re-running
+preparation keeps existing plans, but changed inputs or settings require a matching new
+request. Keep the jobs folder focused on the current batch, or apply individual requests.
 
-```powershell
-py -3 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+`batch input` and `plan FILE` also prepare chat requests by default. An optional API
+planner is available only through explicit `--api` mode and separate credentials;
+it is not required for the workflow described here.
+
+## Default output settings
+
+| Setting | Default |
+| --- | --- |
+| Master Header | Rows 1–10, columns A–AP |
+| Form title | Blank Master cell P4 |
+| Target column width | 0.44 cm |
+| Paper | A4 portrait, fit to one page wide and tall |
+| Left / right margins | 1.6 / 0.6 cm |
+| Top / bottom margins | 1.9 / 1.9 cm |
+| Header / footer margins | 0.8 / 0.8 cm |
+
+The writer renames the active source sheet to `Old` with collision handling and adds
+a form sheet based on the filename. Names are limited to Excel's 31-character maximum.
+Original input files are not overwritten. Source sheets remain in the output copy,
+subject to the Excel feature-preservation limits below.
+
+## Development examples
+
+The following batches were processed locally during development. Engineering workbooks,
+templates, generated plans, and reports are kept outside Git.
+
+| Example | Local result |
+| --- | --- |
+| Structural steel and building inspection forms | 22 forms generated; 1 document-status register preserved unchanged |
+| Instrumentation forms, ECM-05-013 Spin 1 | 26 legacy XLS forms converted to working XLSX copies and reformatted; 1 register preserved |
+| Construction Punch List | Duplicate Body identification fields removed while retaining completion dates and signatures |
+
+The resulting forms were checked in Microsoft Excel for single-page A4 printing.
+Those runs included Codex review and additional local Excel conversion/verification
+steps. **They are assisted-workflow examples, not evidence that the published CLI
+automatically converts XLS files or verifies every printed page.** Wide tables were
+sometimes split into linked sections with fewer blank record rows; review capacity
+before using a generated form for multiple instruments or punch items.
+
+No API calls were used for these chat-assisted runs. They still used Codex chat
+capacity; exact chat token consumption and cost were not available to the workflow.
+
+## Limitations
+
+- **Human review remains necessary.** Source coverage is not a substitute for engineering approval.
+- **Native input support is XLSX.** Legacy XLS files require conversion first. XLSM and protected workbooks are not supported by the documented CLI.
+- **Print settings are not print verification.** The CLI estimates shrinkage. Actual page count, legibility, and physical column widths need checking in Excel.
+- **Complex Excel objects need care.** Images, handwritten marks, drawings, and controls are not interpreted. Floating Master logos are not copied; `openpyxl` can lose unsupported features in output copies.
+- **Formula handling is limited.** Master Header formulas are rejected. Source-sheet renames with dependent formulas or named ranges can require native Excel handling. Body formulas are written as literal text rather than recalculated.
+- **This is a chat-assisted process.** Python does not independently start or control Codex sessions. Unfamiliar layouts still need AI analysis and review.
+
+## Repository structure
+
+```text
+excel_forms/
+    extract.py          # Source cells, merges, and Master Header context
+    planner.py          # Plan schema, validation, fingerprints, optional API planner
+    chat_workflow.py    # Local prepare/apply handoff
+    writer.py           # Deterministic workbook generation
+    cli.py              # Command-line interface
+tests/                  # Synthetic workbook tests
+.vscode/                # Editor and debugger configuration
+AGENTS.md               # Instructions for Codex project chats
+config.json             # Template and layout settings
+main.py                 # Entry point
 ```
 
-This computer's local environment uses the available bundled Python runtime.
-The environment, workbooks, jobs, reports and secrets are excluded from Git.
-No paid API calls are needed to install, test or use the chat workflow.
+Input workbooks, templates, jobs, generated outputs, `.env`, and `.venv` are excluded
+by [.gitignore](.gitignore). The repository shares the implementation and workflow;
+provide your own engineering documents when trying it.
