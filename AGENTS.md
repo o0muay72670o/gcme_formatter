@@ -22,6 +22,18 @@ When asked to process forms:
 plan.title fills the configured blank Master title_cell. Header mappings use actual
 source values. Keep fields without an equivalent Master concept in the body.
 
+User correction: do not repeat identification fields GCME Contract No, Service No,
+Contractor or Equipment No in the Body (including the source label SERVICE). This also applies
+to Construction Punch List. Keep Contractor/GCME/Client completion-role columns and
+signature fields: these are not duplicate identification fields. Preserve populated
+source values in an appropriate header field, or flag an unmatched value for review;
+do not silently discard data.
+Apply this reviewer rule even when the Master has no equivalent field: flag any
+unmatched populated value and its source ID in review_notes for manual resolution.
+Before applying, scan Body titles, column labels and row cells for these duplicates.
+Keep source/helper/Old sheets intact when fixing an already processed workbook;
+edit only its generated form sheet. Do not treat completion roles as identification.
+
 Keep original workbooks, jobs/plans/reports, .env and .venv out of Git. Commit source
 changes only. Run `python -m unittest discover -s tests -v` for pipeline changes.
 No network or paid API calls are needed for tests.

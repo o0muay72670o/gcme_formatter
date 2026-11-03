@@ -122,6 +122,24 @@ class ChatWorkflowTests(unittest.TestCase):
         finally:
             wb.close()
 
+    def test_long_form_title_wraps_without_replacing_master_label(self):
+        from openpyxl import load_workbook
+        config = dict(self.config, title_cell='B1')
+        prepared = prepare(self.source, config, self.jobs)
+        self.request = Path(prepared['request'])
+        envelope = self.write_plan()
+        envelope['plan']['title'] = 'STRUCTURAL STEEL COMPLETION CERTIFICATE AND EQUIPMENT ASSOCIATED STRUCTURAL STEEL WORK'
+        save_json(self.request.with_name('plan.json'), envelope)
+        result = apply_request(self.request, config, self.output)
+        wb = load_workbook(result['output'])
+        try:
+            ws = wb[result['new_sheet']]
+            self.assertTrue(ws['B1'].alignment.wrap_text)
+            self.assertGreater(ws.row_dimensions[1].height, 15)
+            self.assertEqual(ws['A1'].value, 'PROJECT')
+        finally:
+            wb.close()
+
 
 if __name__ == '__main__':
     unittest.main()

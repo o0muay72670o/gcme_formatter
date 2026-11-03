@@ -101,10 +101,17 @@ inside the specified folder; it does not recursively process subfolders.
 
 Open a Codex chat attached to this project and use a prompt such as:
 
-> Process the prepared requests in jobs using the Master Header. Read AGENTS.md,
-> create a plan.json beside each request, validate the source references, and apply
-> the plans. Use this chat for analysis; do not use an API. Preserve engineering
-> wording and blank entry fields, and flag uncertain mappings for review.
+> Process input using AGENTS.md: prepare → plan → validate → apply → review.
+> Use the Master header once. Omit Body identification fields GCME Contract No,
+> Service No/SERVICE, Contractor and Equipment No; keep completion roles/signatures.
+> Preserve engineering content and populated values; flag unmatched values for review.
+> Use Codex chat, no API. Verify one-page A4 layout and report any unverified checks.
+
+Plan validation rejects these known duplicate identification labels in Body titles,
+columns and cells, while allowing Contractor/GCME/Client completion-role matrices.
+This is a targeted guard, not a complete semantic check of every possible synonym.
+After workflow-rule updates, prepare fresh requests; previous plan fingerprints are
+invalidated so older plans cannot silently bypass the updated instructions.
 
 Codex can also run preparation when asked to process the files in `input/`.
 [AGENTS.md](AGENTS.md) documents the project workflow for the agent.

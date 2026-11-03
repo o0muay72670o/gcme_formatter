@@ -69,6 +69,8 @@ class PipelineTests(unittest.TestCase):
         self.addCleanup(wb.close)
         self.assertEqual(wb['Old']['A2'].value, '1. Inspect connection')
         new = wb[result['new_sheet']]
+        self.assertTrue(new.sheet_view.tabSelected)
+        self.assertTrue(all(not sheet.sheet_view.tabSelected for sheet in wb if sheet is not new))
         self.assertIn('B1:D1', {str(r) for r in new.merged_cells.ranges})
         self.assertEqual(new['A1'].value, 'PROJECT')
         self.assertEqual(new['B1'].value, 'Example')
@@ -85,6 +87,19 @@ class PipelineTests(unittest.TestCase):
         wb.save(self.source)
         with self.assertRaisesRegex(ValueError, 'dependents'):
             write_workbook(self.source, self.root/'out.xlsx', self.plan, self.extracted, self.config)
+
+    def test_already_old_sheet_keeps_dependent_references(self):
+        wb = load_workbook(self.source)
+        wb.active.title = 'Old'
+        wb.create_sheet('Other')['A1'] = "='Old'!B1"
+        wb.save(self.source)
+        result = write_workbook(self.source, self.root/'out.xlsx', self.plan, self.extracted, self.config)
+        wb = load_workbook(result['output'])
+        try:
+            self.assertEqual(wb['Other']['A1'].value, "='Old'!B1")
+            self.assertIn('Old', wb.sheetnames)
+        finally:
+            wb.close()
 
     def test_cache_avoids_api_and_is_invalidated_by_source_change(self):
         cache = self.root/'cache'
@@ -122,6 +137,21 @@ class PipelineTests(unittest.TestCase):
     def test_unique_name_handles_long_names_and_collisions(self):
         self.assertLessEqual(len(unique_name('a'*40, ['a'*31])), 31)
         self.assertEqual(unique_name('Old', ['old']), 'Old_2')
+
+    def test_eight_column_acceptance_table_keeps_all_columns(self):
+        section = self.plan['sections'][0]
+        section['columns'] = ['Item', 'YES', 'N/A', 'NO', 'Date', 'Contractor', 'GCME', 'Client']
+        section['rows'][0]['cells'] = [section['rows'][0]['cells'][0]] + [{'text':'','source_ids':[]} for _ in range(7)]
+        validate_plan(self.plan, self.extracted, self.context)
+        target = self.root/'eight-columns.xlsx'
+        result = write_workbook(self.source, target, self.plan, self.extracted, self.config)
+        wb = load_workbook(target)
+        try:
+            ws = wb[result['new_sheet']]
+            headings = [c.value for row in ws.iter_rows(min_row=2, max_row=2) for c in row if c.value]
+            self.assertEqual(headings, section['columns'])
+        finally:
+            wb.close()
 
 
 if __name__ == '__main__':

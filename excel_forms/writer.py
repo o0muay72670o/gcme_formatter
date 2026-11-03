@@ -33,6 +33,8 @@ def _rename_source(wb) -> str:
     if old is None:
         raise ValueError("Source workbook has no active worksheet")
     name = old.title
+    if name == 'Old':
+        return name  # Already renamed by Excel, including any native reference updates.
     # Renaming with openpyxl does not automatically repair dependent formulas.
     quoted, unquoted = f"'{name.replace(chr(39), chr(39)*2)}'!", f"{name}!"
     references = []
@@ -110,6 +112,15 @@ def write_workbook(source: Path, destination: Path, plan: dict, extraction: dict
             cell.value = plan['title']
             if cell.data_type == 'f':
                 cell.data_type = 's'
+            alignment = copy(cell.alignment)
+            alignment.wrap_text = True
+            cell.alignment = alignment
+            title_span = next((area for area in ws.merged_cells.ranges if cell.coordinate in area), None)
+            title_columns = title_span.max_col-title_span.min_col+1 if title_span else 1
+            title_size = cell.font.sz or 9
+            capacity = max(1, (title_columns*config['column_width_cm']*96/2.54-6)/(title_size*.82))
+            title_lines = sum(max(1, math.ceil(len(line)/capacity)) for line in plan['title'].split('\n'))
+            ws.row_dimensions[cell.row].height = max(ws.row_dimensions[cell.row].height or 15, title_lines*(title_size+2)+3)
 
         font_size = config["body_font_size"]
         def box(row, start, end, text, bold=False, filled=False):
@@ -141,7 +152,7 @@ def write_workbook(source: Path, destination: Path, plan: dict, extraction: dict
             # Allocate more grid cells to long descriptions than response columns.
             samples = [[str(cell["text"]) for cell in row["cells"]] for row in section["rows"]]
             weights = [max(4, min(80, max([len(label)] + [len(row[i]) for row in samples]))) for i, label in enumerate(columns)]
-            widths = [3 for _ in columns]
+            widths = [max(1, min(3, count//len(columns))) for _ in columns]
             for _ in range(count-sum(widths)):
                 chosen = max(range(len(widths)), key=lambda i: weights[i]/widths[i])
                 widths[chosen] += 1
@@ -168,6 +179,8 @@ def write_workbook(source: Path, destination: Path, plan: dict, extraction: dict
         ws.page_margins = PageMargins(**{k:v/2.54 for k,v in config["margins_cm"].items()})
         ws.print_area = f'A1:{get_column_letter(count)}{last_row}'
         wb.active = wb.index(ws)
+        for worksheet in wb:
+            worksheet.sheet_view.tabSelected = worksheet is ws
         height = sum(ws.row_dimensions[i].height or 15 for i in range(1, last_row+1))
         available = (29.7-config['margins_cm']['top']-config['margins_cm']['bottom'])*72/2.54
         scale = min(1.0, available/height)
